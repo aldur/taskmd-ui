@@ -1,0 +1,7 @@
+# Local build output: `go build` drops the binary here, named after the module.
+/taskmd-ui
+
+# Nix build symlinks, for anyone building this with the flake in a dotfiles
+# tree rather than with `go build`.
+/result
+/result-*
