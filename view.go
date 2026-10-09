@@ -5,16 +5,15 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-)
-
-const (
-	headerHeight = 2
-	footerHeight = 1
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m model) View() string {
 	if !m.ready {
 		return "loading…"
+	}
+	if m.width <= 0 || m.height <= 0 {
+		return ""
 	}
 	if m.showHelp {
 		return m.helpView()
@@ -23,16 +22,24 @@ func (m model) View() string {
 	body := m.listPane()
 	if m.splitPanes() {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, body, m.detailPane())
-	} else if m.focus == focusDetail {
+	} else if m.reading || m.focus == focusDetail {
 		body = m.detailPane()
 	}
 
-	return strings.Join([]string{m.headerView(), body, m.footerView()}, "\n")
+	var sections []string
+	if m.headerHeight() > 0 {
+		sections = append(sections, m.headerView())
+	}
+	sections = append(sections, body)
+	if m.footerHeight() > 0 {
+		sections = append(sections, m.footerView())
+	}
+	return strings.Join(sections, "\n")
 }
 
 // headerView is the two-line status block: where we are and how the list is
 // currently sliced. The second line is the whole point of the TUI, so it is
-// always present even when nothing is filtered.
+// present even when nothing is filtered, unless height is very limited.
 func (m model) headerView() string {
 	left := styleTitle.Render("taskmd") + " " + styleMuted.Render(m.proj.TaskDir)
 	count := fmt.Sprintf("%d/%s", len(m.visible), plural(len(m.tasks), "task"))
@@ -44,7 +51,14 @@ func (m model) headerView() string {
 	// While typing, the line belongs to the prompt — a long expression needs
 	// the room, and the footer carries any complaint about it.
 	if m.searching {
-		return title + "\n" + m.search.View()
+		prompt := truncate(m.search.View(), m.width)
+		if m.headerHeight() == 1 {
+			return prompt
+		}
+		return title + "\n" + prompt
+	}
+	if m.headerHeight() == 1 {
+		return title
 	}
 	return title + "\n" + fitRow(m.filterLine(), m.sortLine(), m.width)
 }
@@ -52,19 +66,22 @@ func (m model) headerView() string {
 // filterLine spells out every active facet. Inactive ones are still listed, in
 // muted text, so the keys that exist are discoverable without the help screen.
 func (m model) filterLine() string {
-	var parts []string
+	var active, inactive []string
 	add := func(key, name, value string) {
 		if value == anyValue {
-			parts = append(parts, styleMuted.Render(key+":"+name))
+			inactive = append(inactive, styleMuted.Render(key+":"+name))
 			return
 		}
-		parts = append(parts, styleKey.Render(key)+":"+facetLabel(m.proj, name, value))
+		active = append(active, styleKey.Render(key)+":"+facetLabel(m.proj, name, value))
 	}
 
+	if raw := m.filters.Query.Raw; raw != "" {
+		active = append(active, styleKey.Render("/")+styleSelected.Render(raw))
+	}
 	if m.filters.OpenOnly {
-		parts = append(parts, styleKey.Render("o")+":"+styleSelected.Render("open"))
+		active = append(active, styleKey.Render("o")+":"+styleSelected.Render("open"))
 	} else {
-		parts = append(parts, styleMuted.Render("o:open"))
+		inactive = append(inactive, styleMuted.Render("o:open"))
 	}
 	add("f", "status", m.filters.Status)
 	add("p", "prio", m.filters.Priority)
@@ -74,11 +91,25 @@ func (m model) filterLine() string {
 	add("n", "group", m.filters.Group)
 	add("y", "type", m.filters.Type)
 
-	line := strings.Join(parts, " ")
-	if raw := m.filters.Query.Raw; raw != "" {
-		line = styleKey.Render("/") + styleSelected.Render(raw) + "  " + line
+	budget := m.width - lipgloss.Width(m.sortLine()) - 1
+	for _, hints := range []string{
+		strings.Join(inactive, " "),
+		styleMuted.Render("o f p t h w n y") + " " + hint("?", "filters"),
+		hint("?", "filters"),
+		"",
+	} {
+		line := strings.Join(active, " ")
+		if hints != "" {
+			if line != "" {
+				line += "  "
+			}
+			line += hints
+		}
+		if lipgloss.Width(line) <= budget || hints == "" {
+			return line
+		}
 	}
-	return line
+	return ""
 }
 
 // facetLabel renders a facet's value, spelling the `none` sentinel out and
@@ -103,8 +134,8 @@ func (m model) sortLine() string {
 
 func (m model) listPane() string {
 	width := m.listWidth()
-	inner := maxInt(0, width-2)
-	height := maxInt(0, m.bodyHeight()-2)
+	inner := maxInt(0, width-m.paneFrameSize())
+	height := m.listHeight()
 
 	var rows []string
 	switch {
@@ -124,10 +155,7 @@ func (m model) listPane() string {
 		rows = append(rows, "")
 	}
 
-	style := styleBorder
-	if m.focus == focusList {
-		style = styleBorderFocused
-	}
+	style := m.paneStyle(focusList)
 	return style.Width(inner).Height(height).Render(strings.Join(rows[:height], "\n"))
 }
 
@@ -143,9 +171,9 @@ func (m model) taskRow(task Task, selected bool, width int) string {
 
 	fixed := 2 + 2 + idWidth + 2 // marker, glyph, id, gap
 	var (
-		showPriority = width > fixed+30
-		showStatus   = width > fixed+45
-		showTags     = width > fixed+70
+		showPriority = width >= fixed+40+9
+		showStatus   = width >= fixed+50+9+12
+		showTags     = width >= fixed+60+9+12+18 && m.hasTags()
 	)
 
 	trailing := 0
@@ -193,13 +221,29 @@ func (m model) idWidth() int {
 	return width
 }
 
-func (m model) detailPane() string {
+func (m model) hasTags() bool {
+	for _, task := range m.tasks {
+		if len(task.Tags) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (m model) paneStyle(focus focusArea) lipgloss.Style {
+	if m.paneFrameSize() == 0 {
+		return lipgloss.NewStyle()
+	}
 	style := styleBorder
-	if m.focus == focusDetail {
+	if m.focus == focus {
 		style = styleBorderFocused
 	}
+	return style
+}
+
+func (m model) detailPane() string {
 	width, height := m.detailSize()
-	return style.Width(width).Height(height).Render(m.detail.View())
+	return m.paneStyle(focusDetail).Width(width).Height(height).Render(m.detail.View())
 }
 
 // renderDetail is the right-hand pane's content: the frontmatter as a field
@@ -210,14 +254,19 @@ func renderDetail(proj Project, task Task, width int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(styleAccent.Render(task.ID) + "  " + styleTitle.Render(task.Title) + "\n")
+	b.WriteString(ansi.Wrap(styleAccent.Render(task.ID)+"  "+styleTitle.Render(task.Title), width, "") + "\n")
 	b.WriteString(styleMuted.Render(strings.Repeat("─", width)) + "\n")
 
 	field := func(name, value string) {
 		if value == "" {
 			return
 		}
-		b.WriteString(styleMuted.Render(pad(name, 10)) + value + "\n")
+		if width < 24 {
+			b.WriteString(ansi.Wrap(styleMuted.Render(name), width, "") + "\n")
+			b.WriteString(wrapWithPrefix("  ", value, width) + "\n")
+		} else {
+			b.WriteString(wrapWithPrefix(styleMuted.Render(pad(name, 10)), value, width) + "\n")
+		}
 	}
 	field("status", statusText(task.Status))
 	field("priority", priorityText(task.Priority))
@@ -248,7 +297,9 @@ func renderDetail(proj Project, task Task, width int) string {
 // checkboxes are what task bodies are made of, and a full renderer would cost
 // a dependency the size of the rest of this program.
 func renderBody(body string, width int) string {
-	wrap := lipgloss.NewStyle().Width(width)
+	if width <= 0 {
+		return ""
+	}
 
 	var out []string
 	inCode := false
@@ -257,25 +308,52 @@ func renderBody(body string, width int) string {
 		switch {
 		case strings.HasPrefix(trimmed, "```"):
 			inCode = !inCode
-			out = append(out, styleMuted.Render(line))
+			out = append(out, styleMuted.Render(ansi.Hardwrap(line, width, true)))
 		case inCode:
-			out = append(out, styleMuted.Render(line))
+			out = append(out, styleMuted.Render(ansi.Hardwrap(line, width, true)))
 		case strings.HasPrefix(trimmed, "#"):
-			out = append(out, styleTitle.Render(wrap.Render(strings.TrimSpace(strings.TrimLeft(trimmed, "#")))))
+			out = append(out, styleTitle.Render(ansi.Wrap(strings.TrimSpace(strings.TrimLeft(trimmed, "#")), width, "")))
 		case strings.HasPrefix(trimmed, "- [x]"), strings.HasPrefix(trimmed, "- [X]"):
 			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-			out = append(out, indent+styleNotice.Render("✓ ")+styleMuted.Render(strings.TrimSpace(trimmed[5:])))
+			out = append(out, wrapWithPrefix(indent+styleNotice.Render("✓ "), styleMuted.Render(strings.TrimSpace(trimmed[5:])), width))
 		case strings.HasPrefix(trimmed, "- [ ]"):
 			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-			out = append(out, indent+styleAccent.Render("☐ ")+strings.TrimSpace(trimmed[5:]))
+			out = append(out, wrapWithPrefix(indent+styleAccent.Render("☐ "), strings.TrimSpace(trimmed[5:]), width))
+		case strings.HasPrefix(trimmed, "- "), strings.HasPrefix(trimmed, "* "), strings.HasPrefix(trimmed, "+ "):
+			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			out = append(out, wrapWithPrefix(indent+trimmed[:2], trimmed[2:], width))
 		default:
-			out = append(out, wrap.Render(line))
+			out = append(out, ansi.Wrap(line, width, ""))
 		}
 	}
 	return strings.Join(out, "\n")
 }
 
+// Keep continuation lines under the value, rather than under its label or
+// checkbox. Very narrow panes drop indentation to leave room for text.
+func wrapWithPrefix(prefix, text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	indent := lipgloss.Width(prefix)
+	if indent >= width {
+		return ansi.Wrap(prefix+text, width, "")
+	}
+	lines := strings.Split(ansi.Wrap(text, width-indent, ""), "\n")
+	for i := range lines {
+		if i == 0 {
+			lines[i] = prefix + lines[i]
+		} else {
+			lines[i] = strings.Repeat(" ", indent) + lines[i]
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (m model) footerView() string {
+	if m.reading {
+		return m.readerFooterView()
+	}
 	if notice, isErr := m.noticeText(); notice != "" {
 		style := styleNotice
 		if isErr {
@@ -292,17 +370,58 @@ func (m model) footerView() string {
 		return styleMuted.Render(truncate("status!=completed · priority>=high · tag:a11y,ux · owner:none · created<2026-06-01 · ? for the syntax", m.width))
 	}
 
-	hints := []string{
-		hint("/", "filter"),
-		hint("o", "open"),
-		hint("s", "sort"),
-		hint("space", "advance"),
-		hint("e", "edit"),
-		hint("c", "clear"),
-		hint("?", "help"),
-		hint("q", "quit"),
+	navigation := hint("tab", "panes")
+	if !m.splitPanes() {
+		navigation = hint("tab", "details")
+		if m.focus == focusDetail {
+			navigation = hint("esc", "back")
+		}
 	}
-	return truncate(strings.Join(hints, styleMuted.Render(" · ")), m.width)
+	primary := []string{hint("/", "filter"), hint("enter", "read")}
+	extraNavigation := navigation
+	if m.focus == focusDetail {
+		primary = []string{navigation, hint("j/k", "scroll")}
+		extraNavigation = hint("enter", "read")
+	}
+	tail := []string{hint("?", "help"), hint("q", "quit")}
+	join := func(parts []string) string { return strings.Join(parts, styleMuted.Render(" · ")) }
+	withTail := func(parts []string) string {
+		return join(append(append([]string{}, parts...), tail...))
+	}
+	if lipgloss.Width(withTail(primary)) > m.width {
+		primary = []string{primary[1]}
+		if m.focus == focusDetail {
+			primary = []string{navigation}
+		}
+	}
+	if lipgloss.Width(withTail(primary)) > m.width {
+		primary = nil
+	}
+	for _, extra := range []string{
+		extraNavigation,
+		hint("s", "sort"), hint("e", "edit"), hint("o", "open"),
+		hint("space", "advance"), hint("c", "clear"),
+	} {
+		candidate := append(append([]string{}, primary...), extra)
+		if lipgloss.Width(withTail(candidate)) <= m.width {
+			primary = candidate
+		}
+	}
+	return truncate(withTail(primary), m.width)
+}
+
+func (m model) readerFooterView() string {
+	line := styleMuted.Render("read only") + styleMuted.Render(" · ") + hint("esc", "back")
+	if lipgloss.Width(line) > m.width {
+		return fitRow(styleMuted.Render("read only"), hint("esc", "back"), m.width)
+	}
+	for _, extra := range []string{hint("j/k", "scroll"), hint("?", "help"), hint("q", "quit")} {
+		candidate := line + styleMuted.Render(" · ") + extra
+		if lipgloss.Width(candidate) <= m.width {
+			line = candidate
+		}
+	}
+	return line
 }
 
 func hint(key, label string) string {
@@ -311,11 +430,14 @@ func hint(key, label string) string {
 
 // helpRows is the full keymap, and the only place it is written down for the
 // reader. The dispatch lives in handleKey.
-var helpRows = []struct{ keys, label string }{
+type helpRow struct{ keys, label string }
+
+var helpRows = []helpRow{
 	{"j / k, ↑ / ↓", "move"},
 	{"ctrl+d / ctrl+u", "half page"},
 	{"g / G", "first / last"},
-	{"tab, enter", "switch pane (scrolls the detail when focused)"},
+	{"tab", "switch pane (scrolls the detail when focused)"},
+	{"enter", "read the selected task full screen; esc returns"},
 	{"", ""},
 	{"/", "filter as you type; enter keeps it, esc reverts"},
 	{"", "  parser              free text over id, title, tags and body"},
@@ -353,14 +475,23 @@ var helpRows = []struct{ keys, label string }{
 	{"q", "quit"},
 }
 
+var readerHelpRows = []helpRow{
+	{"j / k, ↑ / ↓", "scroll the task"},
+	{"ctrl+d / ctrl+u", "half page"},
+	{"pgdown / pgup", "half page"},
+	{"space", "page down"},
+	{"g / G", "top / bottom"},
+	{"r", "reload now (the task also reloads every 2s)"},
+	{"esc, enter, tab", "return to the browser"},
+	{"?", "close this help"},
+	{"q", "quit"},
+}
+
 // helpView fills the screen with the keymap. It scrolls rather than clips: the
 // syntax reference below the keys is worth more than a terminal-height budget,
 // and j/k already mean "move" everywhere else.
 func (m model) helpView() string {
-	lines := helpLines()
-	for i, line := range lines {
-		lines[i] = truncate(line, m.width)
-	}
+	lines := m.helpLines()
 
 	height := maxInt(1, m.height)
 	if len(lines) <= height {
@@ -376,39 +507,62 @@ func (m model) helpView() string {
 	if remaining == 0 {
 		hint = "  ↑ j/k scrolls, ? or esc closes"
 	}
-	return strings.Join(append(lines[offset:offset+body:offset+body], styleMuted.Render(hint)), "\n")
+	return strings.Join(append(lines[offset:offset+body:offset+body], styleMuted.Render(truncate(hint, m.width))), "\n")
 }
 
 // helpLength is how many lines the help page runs to, for clamping its scroll.
-func helpLength() int { return len(helpLines()) }
+func (m model) helpLength() int { return len(m.helpLines()) }
 
-func helpLines() []string {
-	lines := []string{
-		styleTitle.Render("taskmd-ui") + styleMuted.Render("  keys — ? or esc closes"),
-		"",
+func (m model) helpLines() []string {
+	if m.reading {
+		return helpLinesFor(m.width, readerHelpRows, []string{
+			"Read only: editing and status changes are disabled while reading a task.",
+		})
 	}
-	for _, row := range helpRows {
+	return helpLines(m.width)
+}
+
+func helpLines(width int) []string {
+	return helpLinesFor(width, helpRows, []string{
+		"Uppercase cycles a filter backwards. Facets and the query are ANDed.",
+		"Status changes are written by `taskmd set`; the list reloads every 2s.",
+	})
+}
+
+func helpLinesFor(width int, rows []helpRow, notes []string) []string {
+	var lines []string
+	add := func(line string) {
+		lines = append(lines, strings.Split(line, "\n")...)
+	}
+	add(ansi.Wrap(styleTitle.Render("taskmd-ui")+styleMuted.Render("  keys — ? or esc closes"), width, ""))
+	add("")
+	for _, row := range rows {
 		switch {
 		case row.keys == "" && row.label == "":
-			lines = append(lines, "")
+			add("")
 		case row.keys == "":
 			// A continuation of the row above: the query syntax under `/`.
-			lines = append(lines, "  "+styleMuted.Render(row.label))
+			add(wrapWithPrefix("  ", styleMuted.Render(strings.TrimSpace(row.label)), width))
+		case width < 64:
+			add(wrapWithPrefix("  ", styleKey.Render(row.keys)+"  "+row.label, width))
 		default:
-			lines = append(lines, "  "+styleKey.Render(pad(row.keys, 18))+" "+row.label)
+			add(wrapWithPrefix("  "+styleKey.Render(pad(row.keys, 18))+" ", row.label, width))
 		}
 	}
-	return append(lines, "",
-		styleMuted.Render("  Uppercase cycles a filter backwards. Facets and the query are ANDed."),
-		styleMuted.Render("  Status changes are written by `taskmd set`; the list reloads every 2s."))
+	add("")
+	for _, note := range notes {
+		add(wrapWithPrefix("  ", styleMuted.Render(note), width))
+	}
+	return lines
 }
 
 // fitRow puts left and right on one line, padding between them and dropping
-// the right side when the terminal is too narrow to hold both.
+// text from the left so counts and the sort order stay visible.
 func fitRow(left, right string, width int) string {
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		return truncate(left, width)
+	if lipgloss.Width(right) >= width {
+		return truncate(right, width)
 	}
+	left = truncate(left, width-lipgloss.Width(right)-1)
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	return left + strings.Repeat(" ", gap) + right
 }

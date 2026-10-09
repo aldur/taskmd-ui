@@ -27,7 +27,7 @@ const (
 
 // detailBreakpoint is the width below which the detail pane stops sharing the
 // screen with the list and becomes a view you switch to instead.
-const detailBreakpoint = 90
+const detailBreakpoint = 120
 
 type model struct {
 	proj Project
@@ -48,6 +48,9 @@ type model struct {
 	detailFor  string // task id the viewport currently holds
 	showHelp   bool
 	helpOffset int // first visible line of the help page
+
+	reading            bool // full-screen, read-only task view
+	readerReturnOffset int  // restore the preview's scroll position on exit
 
 	width, height int
 
@@ -180,9 +183,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "g", "home":
 			m.helpOffset = 0
 		case "G", "end":
-			m.scrollHelp(helpLength())
+			m.scrollHelp(m.helpLength())
 		}
 		return m, nil
+	}
+	if m.reading {
+		return m.handleReaderKey(msg)
 	}
 
 	switch msg.String() {
@@ -211,13 +217,13 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detail.HalfViewDown()
 			return m, nil
 		}
-		m.move(m.listHeight() / 2)
+		m.move(maxInt(1, m.listHeight()/2))
 	case "ctrl+u", "pgup":
 		if m.focus == focusDetail {
 			m.detail.HalfViewUp()
 			return m, nil
 		}
-		m.move(-m.listHeight() / 2)
+		m.move(-maxInt(1, m.listHeight()/2))
 	case "g", "home":
 		if m.focus == focusDetail {
 			m.detail.GotoTop()
@@ -230,8 +236,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.moveTo(len(m.visible) - 1)
-	case "tab", "enter":
+	case "tab":
 		m.focus = 1 - m.focus
+		return m, nil
+	case "enter":
+		if _, ok := m.selected(); ok {
+			m.readerReturnOffset = m.detail.YOffset
+			m.reading = true
+			m.layout()
+			m.detail.GotoTop()
+		}
 		return m, nil
 	case "esc":
 		m.focus = focusList
@@ -316,6 +330,38 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// The reader accepts navigation and reloads only. All editing, status,
+// filtering and sorting shortcuts stop here so the task stays under focus.
+func (m model) handleReaderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "enter", "tab":
+		m.reading = false
+		m.layout()
+		m.detail.SetYOffset(m.readerReturnOffset)
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "?":
+		m.showHelp = true
+	case "j", "down":
+		m.detail.LineDown(1)
+	case "k", "up":
+		m.detail.LineUp(1)
+	case "ctrl+d", "pgdown":
+		m.detail.HalfViewDown()
+	case "ctrl+u", "pgup":
+		m.detail.HalfViewUp()
+	case " ":
+		m.detail.ViewDown()
+	case "g", "home":
+		m.detail.GotoTop()
+	case "G", "end":
+		m.detail.GotoBottom()
+	case "r":
+		return m, loadCmd(m.proj.TaskDir)
+	}
+	return m, nil
+}
+
 // facet lists the values a field takes across every loaded task — the cycle a
 // filter key steps through.
 func (m model) facet(get func(Task) []string) []string {
@@ -340,6 +386,16 @@ func (m *model) refilter() {
 				break
 			}
 		}
+	}
+	if m.reading && (len(m.visible) == 0 || m.visible[m.cursor].ID != selectedID) {
+		// A deleted or newly filtered-out task should not silently turn the
+		// reader into a different task after an external edit.
+		m.reading = false
+		m.showHelp = false
+		m.helpOffset = 0
+		m.setNotice(fmt.Sprintf("Task %s left the current list", selectedID), false)
+		m.layout()
+		return
 	}
 	m.clampCursor()
 	m.syncDetail()
@@ -401,6 +457,7 @@ func (m *model) syncDetail() {
 		return
 	}
 	m.detail.SetContent(renderDetail(m.proj, task, m.detail.Width))
+	m.detail.SetYOffset(m.detail.YOffset)
 	if m.detailFor != task.ID {
 		m.detailFor = task.ID
 		m.detail.GotoTop()
@@ -409,7 +466,7 @@ func (m *model) syncDetail() {
 
 // scrollHelp moves the help page, stopping at its last screenful.
 func (m *model) scrollHelp(delta int) {
-	m.helpOffset = minInt(maxInt(m.helpOffset+delta, 0), maxInt(0, helpLength()-maxInt(1, m.height-1)))
+	m.helpOffset = minInt(maxInt(m.helpOffset+delta, 0), maxInt(0, m.helpLength()-maxInt(1, m.height-1)))
 }
 
 func (m *model) setNotice(text string, isErr bool) {
@@ -423,17 +480,49 @@ func (m *model) layout() {
 	width, height := m.detailSize()
 	m.detail.Width = width
 	m.detail.Height = height
-	m.search.Width = maxInt(10, m.width-4)
+	m.search.Width = maxInt(1, m.width-2) // prompt and cursor each need a cell
 	m.clampCursor()
 	m.syncDetail()
 }
 
 // splitPanes reports whether the list and the detail share the screen.
-func (m model) splitPanes() bool { return m.width >= detailBreakpoint }
+func (m model) splitPanes() bool { return !m.reading && m.width >= detailBreakpoint }
 
 // bodyHeight is the space between the header and the footer.
 func (m model) bodyHeight() int {
-	return maxInt(0, m.height-headerHeight-footerHeight)
+	return maxInt(0, m.height-m.headerHeight()-m.footerHeight())
+}
+
+// Keep at least one content row when the terminal is very short.
+func (m model) headerHeight() int {
+	if m.reading {
+		return 0
+	}
+	if m.height >= 5 {
+		return 2
+	}
+	if m.height >= 2 {
+		return 1
+	}
+	return 0
+}
+
+func (m model) footerHeight() int {
+	if m.height >= 3 {
+		return 1
+	}
+	return 0
+}
+
+// Borders give way to content when there is no room for both.
+func (m model) paneFrameSize() int {
+	if m.reading {
+		return 0
+	}
+	if m.width >= 4 && m.bodyHeight() >= 3 {
+		return 2
+	}
+	return 0
 }
 
 // listWidth is the outer width of the list pane, borders included.
@@ -448,17 +537,14 @@ func (m model) listWidth() int {
 
 // listHeight is how many task rows fit.
 func (m model) listHeight() int {
-	if !m.splitPanes() && m.focus == focusDetail {
-		return 0
-	}
-	return maxInt(0, m.bodyHeight()-2) // the pane's own border
+	return maxInt(0, m.bodyHeight()-m.paneFrameSize())
 }
 
 func (m model) detailSize() (width, height int) {
 	if m.splitPanes() {
-		return maxInt(0, m.width-m.listWidth()-2), maxInt(0, m.bodyHeight()-2)
+		return maxInt(0, m.width-m.listWidth()-m.paneFrameSize()), m.listHeight()
 	}
-	return maxInt(0, m.width-2), maxInt(0, m.bodyHeight()-2)
+	return maxInt(0, m.width-m.paneFrameSize()), m.listHeight()
 }
 
 // advanceStatus is the next state along the spec's happy path, which is what

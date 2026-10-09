@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // The palette is deliberately all ANSI 0-15: those are the colours the
@@ -86,21 +87,7 @@ func truncate(text string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if lipgloss.Width(text) <= width {
-		return text
-	}
-	if width == 1 {
-		return "…"
-	}
-	runes := []rune(text)
-	for len(runes) > 0 {
-		candidate := string(runes) + "…"
-		if lipgloss.Width(candidate) <= width {
-			return candidate
-		}
-		runes = runes[:len(runes)-1]
-	}
-	return "…"
+	return ansi.Truncate(text, width, "…")
 }
 
 // pad right-fills to an exact display width, so columns line up even when a

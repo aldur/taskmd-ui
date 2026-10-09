@@ -43,6 +43,17 @@ The list reloads every two seconds, so edits made anywhere else — `taskmd set`
 in another pane, an editor, an agent — show up on their own. The cursor stays
 on the same task across a reload, and `r` forces one.
 
+Below 120 columns, the list and details each use the full width. Press `tab`
+to switch views, and `esc` to return to the list. Details and help
+wrap to the available width; smaller screens keep active filters, task counts,
+the sort order and navigation hints ahead of optional columns and shortcuts.
+
+Press `enter` to read the selected task full screen at any terminal width.
+This view hides the browser header, filters and borders. It is read-only:
+`e` and `1`–`6` are disabled, and `space` scrolls down instead of changing
+status. Use `j`/`k` to scroll, `g`/`G` for the top or bottom, and `esc` to
+return to the same task and preview position. External edits still reload.
+
 ### Filtering
 
 Single keys cycle a facet: `o` toggles open-only, and `f p t h w n y` cycle
@@ -76,6 +87,7 @@ and a half-typed expression keeps filtering on the terms that did parse.
 ### Keys
 
 `?` has the full list. The short version: `j`/`k` move, `tab` switches panes,
+`enter` reads the task full screen,
 `s` cycles the sort and `S` reverses it, `space` advances a task along the
 workflow, `1`–`6` set a status outright, `e` opens the task in `$EDITOR`, `q`
 quits.
