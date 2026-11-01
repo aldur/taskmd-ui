@@ -89,4 +89,4 @@ writes go through the CLI.
 
 [0]: https://github.com/driangle/taskmd
 [1]: https://github.com/driangle/taskmd/blob/main/tasks/archive/cli/074-remove-tui-feature.md
-[2]: https://raw.githubusercontent.com/aldur/taskmd-ui/demo-assets/demo.gif
+[2]: https://raw.githubusercontent.com/aldur/taskmd-ui/refs/heads/demo-assets/demo.gif
