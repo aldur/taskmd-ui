@@ -7,7 +7,7 @@ Set Height 620
 Set TypingSpeed 70ms
 
 Hide
-Type "exec ./taskmd-ui -d demo/tasks"
+Type "exec env -u NO_COLOR CLICOLOR_FORCE=1 ./taskmd-ui -d demo/tasks"
 Enter
 Wait+Screen /Plan the launch/
 Show

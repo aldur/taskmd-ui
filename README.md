@@ -1,28 +1,9 @@
 # taskmd-ui
 
-A full-screen terminal browser for [taskmd](https://github.com/driangle/taskmd)
-projects: a task list you filter and re-sort a keypress at a time, next to the
-detail of whatever is under the cursor.
+A terminal browser for [taskmd][0] projects: a task list you filter and re-sort
+a keypress at a time, next to the detail of whatever is under the cursor.
 
-taskmd ships a CLI and a web dashboard. It had a TUI once and
-[removed it](https://github.com/driangle/taskmd/blob/main/tasks/archive/cli/074-remove-tui-feature.md)
-in v0.3.0 as redundant with those two. This is the terminal view that left
-behind.
-
-![Demo of taskmd-ui filtering and browsing tasks](https://raw.githubusercontent.com/aldur/taskmd-ui/demo-assets/demo.gif)
-
-```
-taskmd /home/you/project/tasks                                      9/29 tasks
-/status!=done priority>=high  o:open f:status p:prio t:tag h:phase   sort:priority↑
-╭──────────────────────────────────────────────╮╭──────────────────────────────╮
-│▸ ○ 050  v0.3 release checklist      critical ││050  v0.3 release checklist   │
-│  ◐ 002  Segment compaction runs be… critical ││──────────────────────────────│
-│  ○ 003  Checksum mismatch panics i… critical ││status    pending             │
-│  ⊘ 032  Nightly job silently stopp… critical ││priority  critical            │
-│  ◐ 011  orbit query: filters, proj… high     ││owner     aldur               │
-╰──────────────────────────────────────────────╯╰──────────────────────────────╯
-/ filter · o open · s sort · space advance · e edit · c clear · ? help · q quit
-```
+![Demo of taskmd-ui filtering and browsing tasks][2]
 
 ## Install
 
@@ -30,16 +11,16 @@ taskmd /home/you/project/tasks                                      9/29 tasks
 go install github.com/aldur/taskmd-ui@latest
 ```
 
-`taskmd` itself needs to be on `PATH`: status changes are written by
-`taskmd set` rather than by editing frontmatter here, so its rules about what a
+`taskmd` itself needs to be on `PATH`: status changes are written by `taskmd
+set` rather than by editing frontmatter here, so its rules about what a
 transition does stay in one place.
 
 ## Use
 
 Run it inside a taskmd project. The task directory is discovered the way the
 CLI discovers it — the `dir` key of the nearest `.taskmd.yaml` above the
-working directory — or pass `-d DIR` to point it somewhere else, including
-into a project you are not standing in.
+working directory — or pass `-d DIR` to point it somewhere else, including into
+a project you are not standing in.
 
 The list reloads every two seconds, so edits made anywhere else — `taskmd set`
 in another pane, an editor, an agent — show up on their own. The cursor stays
@@ -105,3 +86,7 @@ quits.
 Tasks are read from the markdown directly rather than through `taskmd list
 --format json`, which drops `phase` and `owner` — both filter axes here. Only
 writes go through the CLI.
+
+[0]: https://github.com/driangle/taskmd
+[1]: https://github.com/driangle/taskmd/blob/main/tasks/archive/cli/074-remove-tui-feature.md
+[2]: https://raw.githubusercontent.com/aldur/taskmd-ui/demo-assets/demo.gif
