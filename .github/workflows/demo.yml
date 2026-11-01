@@ -1,0 +1,80 @@
+name: Update demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: demo
+  cancel-in-progress: false
+
+jobs:
+  demo:
+    name: Record demo
+    permissions:
+      contents: read # Check out the source.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - name: Build and record demo
+        env:
+          CGO_ENABLED: 0
+          NIXPKGS: github:NixOS/nixpkgs/fa1373130d5a21c040a47c5dbe1913d59ed91808
+        run: |
+          fonts=$(nix build --no-link --print-out-paths "$NIXPKGS#dejavu_fonts")
+          export FONTCONFIG_FILE="$RUNNER_TEMP/demo-fonts.conf"
+          printf '%s\n' '<?xml version="1.0"?>' '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">' \
+            "<fontconfig><dir>$fonts/share/fonts</dir><cachedir>$RUNNER_TEMP/font-cache</cachedir></fontconfig>" > "$FONTCONFIG_FILE"
+          nix shell "$NIXPKGS#go" "$NIXPKGS#vhs" \
+            -c bash -c 'go build -o taskmd-ui . && vhs demo/demo.tape && test -s demo.gif'
+      - name: Upload demo artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: demo
+          path: demo.gif
+  publish:
+    name: Publish demo
+    needs: demo
+    permissions:
+      contents: write # Update the demo-assets branch.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: demo
+      - name: Publish demo
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          asset_ref=$(git ls-remote --heads origin demo-assets)
+          if [[ -n "$asset_ref" ]]; then
+            git fetch origin demo-assets
+            git worktree add -b demo-assets "$RUNNER_TEMP/demo-assets" FETCH_HEAD
+          else
+            git worktree add --detach "$RUNNER_TEMP/demo-assets"
+            git -C "$RUNNER_TEMP/demo-assets" switch --orphan demo-assets
+          fi
+          cp demo.gif "$RUNNER_TEMP/demo-assets/demo.gif"
+          cd "$RUNNER_TEMP/demo-assets"
+          git add demo.gif
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update demo GIF'
+            git push origin demo-assets
+          fi

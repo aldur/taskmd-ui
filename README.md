@@ -9,6 +9,8 @@ taskmd ships a CLI and a web dashboard. It had a TUI once and
 in v0.3.0 as redundant with those two. This is the terminal view that left
 behind.
 
+![Demo of taskmd-ui filtering and browsing tasks](https://raw.githubusercontent.com/aldur/taskmd-ui/demo-assets/demo.gif)
+
 ```
 taskmd /home/you/project/tasks                                      9/29 tasks
 /status!=done priority>=high  o:open f:status p:prio t:tag h:phase   sort:priority↑
