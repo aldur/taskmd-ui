@@ -18,6 +18,9 @@ func (m model) View() string {
 	if m.showHelp {
 		return m.helpView()
 	}
+	if m.selectingStatus {
+		return m.statusSelectorView()
+	}
 
 	body := m.listPane()
 	if m.splitPanes() {
@@ -399,7 +402,7 @@ func (m model) footerView() string {
 	}
 	for _, extra := range []string{
 		extraNavigation,
-		hint("s", "sort"), hint("e", "edit"), hint("o", "open"),
+		hint("v", "statuses"), hint("s", "sort"), hint("e", "edit"), hint("o", "open"),
 		hint("space", "advance"), hint("c", "clear"),
 	} {
 		candidate := append(append([]string{}, primary...), extra)
@@ -441,11 +444,12 @@ var helpRows = []helpRow{
 	{"enter", "read the selected task full screen; esc returns"},
 	{"", ""},
 	{"/", "filter as you type; enter keeps it, esc reverts"},
+	{"v", "select statuses; space toggles, enter applies, esc cancels"},
 	{"", "  parser              free text over id, title, tags and body"},
-	{"", "  -parser             …and not that"},
+	{"", "  -parser             exclude tasks containing this text"},
 	{"", "  \"record format\"     quoted, so the space is part of it"},
 	{"", "  status:blocked      field is this value"},
-	{"", "  status!=completed   field is not (same as -status:completed)"},
+	{"", "  -status:completed   exclude completed tasks (also status!=completed)"},
 	{"", "  status:open         open, active, done or resolved as a group"},
 	{"", "  tag:a11y,ux         either value"},
 	{"", "  priority>=high      at least this urgent (effort orders too)"},

@@ -66,7 +66,7 @@ discoverable without the help screen.
 | Term | Matches |
 | --- | --- |
 | `parser` | free text over id, title, tags and body |
-| `-parser` | …and not that |
+| `-parser` | exclude tasks with this text in any searchable field |
 | `"record format"` | quoted, so the space is part of the text |
 | `status:blocked` | field is this value |
 | `status!=completed` | field is not (same as `-status:completed`) |
@@ -80,6 +80,12 @@ Terms are ANDed, and combine with the facet keys. Fields: `status`,
 `priority`, `effort`, `type`, `owner`, `phase`, `group`, `tag`, `dep`,
 `touches`, `parent`, `id`, `title`, `file`, `body`, `created`, with short
 aliases for the common ones.
+
+Use `-status:completed` to exclude completed tasks. `-completed` excludes
+any task that contains that text, including in its title or body.
+
+Press `v` to select statuses. Use `j`/`k` or the arrow keys and space to change the
+selection, then press enter to update the query or escape to cancel.
 
 A value a field cannot take is reported rather than silently matching nothing,
 and a half-typed expression keeps filtering on the terms that did parse.

@@ -37,7 +37,7 @@ func assertScreenFits(t *testing.T, view string, width, height int) {
 
 func TestViewsFitSmallTerminals(t *testing.T) {
 	for _, size := range [][2]int{{1, 1}, {2, 3}, {3, 4}, {20, 6}, {40, 10}, {80, 24}, {95, 28}, {119, 20}, {120, 24}, {160, 40}} {
-		for _, state := range []string{"list", "detail", "reader", "reader help", "search", "help", "empty", "error"} {
+		for _, state := range []string{"list", "detail", "reader", "reader help", "search", "status selector", "help", "empty", "error"} {
 			t.Run(fmt.Sprintf("%dx%d/%s", size[0], size[1], state), func(t *testing.T) {
 				m := screenModel(size[0], size[1])
 				m.moveTo(1)
@@ -58,6 +58,9 @@ func TestViewsFitSmallTerminals(t *testing.T) {
 				case "help":
 					m.showHelp = true
 					m.scrollHelp(m.helpLength() / 2)
+				case "status selector":
+					m.openStatusSelector()
+					m.statusCursor = len(Statuses) - 1
 				case "empty":
 					m.tasks = nil
 					m.refilter()

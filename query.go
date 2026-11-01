@@ -256,7 +256,6 @@ func parseTerm(token string) (queryTerm, error) {
 	if token == "" {
 		return term, fmt.Errorf("empty term")
 	}
-
 	name, op, value, negated, ok := splitTerm(token)
 	field, known := queryFields[strings.ToLower(name)]
 	if !ok || !known {

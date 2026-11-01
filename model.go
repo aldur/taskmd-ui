@@ -40,8 +40,11 @@ type model struct {
 	filters Filters
 	order   Sort
 
-	search    textinput.Model
-	searching bool
+	search          textinput.Model
+	searching       bool
+	selectingStatus bool
+	statusCursor    int
+	statusSelected  [6]bool
 
 	detail     viewport.Model
 	focus      focusArea
@@ -143,6 +146,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.selectingStatus {
+		return m.handleStatusKey(msg), nil
+	}
 	// The filter prompt swallows every key but the two that leave it, so
 	// typing `q` or `j` into a query does what it looks like.
 	if m.searching {
@@ -267,6 +273,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.search.SetValue(m.filters.Query.Raw)
 		m.search.CursorEnd()
 		return m, m.search.Focus()
+	case "v":
+		m.openStatusSelector()
 	case "o":
 		m.filters.OpenOnly = !m.filters.OpenOnly
 		// The two are contradictory: an explicit `status:completed` and
