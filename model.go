@@ -197,6 +197,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.showHelp = true
 		return m, nil
+	case "ctrl+f":
+		if m.splitPanes() || m.focus == focusDetail {
+			m.detail.ViewDown()
+		}
+		return m, nil
+	case "ctrl+b":
+		if m.splitPanes() || m.focus == focusDetail {
+			m.detail.ViewUp()
+		}
+		return m, nil
 
 	// Navigation. The same keys drive whichever pane has focus, so the detail
 	// scrolls with j/k once you tab into it.
@@ -350,6 +360,10 @@ func (m model) handleReaderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detail.HalfViewDown()
 	case "ctrl+u", "pgup":
 		m.detail.HalfViewUp()
+	case "ctrl+f":
+		m.detail.ViewDown()
+	case "ctrl+b":
+		m.detail.ViewUp()
 	case " ":
 		m.detail.ViewDown()
 	case "g", "home":

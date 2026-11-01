@@ -26,6 +26,29 @@ func runeKey(key rune) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}}
 }
 
+func TestTaskPageScroll(t *testing.T) {
+	for _, mode := range []string{"sidebar list focus", "sidebar detail focus", "fullscreen"} {
+		t.Run(mode, func(t *testing.T) {
+			m := readerModel(160, 14)
+			if mode == "sidebar detail focus" {
+				m.focus = focusDetail
+			}
+			if mode == "fullscreen" {
+				m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			}
+			cursor := m.cursor
+			m, _ = press(m, tea.KeyMsg{Type: tea.KeyCtrlF})
+			if m.detail.YOffset != m.detail.Height || m.cursor != cursor {
+				t.Fatalf("ctrl+f: offset %d, height %d, cursor %d", m.detail.YOffset, m.detail.Height, m.cursor)
+			}
+			m, _ = press(m, tea.KeyMsg{Type: tea.KeyCtrlB})
+			if m.detail.YOffset != 0 || m.cursor != cursor {
+				t.Fatalf("ctrl+b: offset %d, cursor %d", m.detail.YOffset, m.cursor)
+			}
+		})
+	}
+}
+
 func TestReaderUsesFullScreenAndRestoresPreview(t *testing.T) {
 	for _, focus := range []focusArea{focusList, focusDetail} {
 		m := readerModel(160, 14)

@@ -435,6 +435,7 @@ type helpRow struct{ keys, label string }
 var helpRows = []helpRow{
 	{"j / k, ↑ / ↓", "move"},
 	{"ctrl+d / ctrl+u", "half page"},
+	{"ctrl+f / ctrl+b", "scroll task one page"},
 	{"g / G", "first / last"},
 	{"tab", "switch pane (scrolls the detail when focused)"},
 	{"enter", "read the selected task full screen; esc returns"},
@@ -478,6 +479,7 @@ var helpRows = []helpRow{
 var readerHelpRows = []helpRow{
 	{"j / k, ↑ / ↓", "scroll the task"},
 	{"ctrl+d / ctrl+u", "half page"},
+	{"ctrl+f / ctrl+b", "full page"},
 	{"pgdown / pgup", "half page"},
 	{"space", "page down"},
 	{"g / G", "top / bottom"},
