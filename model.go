@@ -140,9 +140,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.MouseMsg:
+		return m.handleMouse(msg), nil
 	}
 
 	return m, nil
+}
+
+func (m model) handleMouse(msg tea.MouseMsg) model {
+	delta := 0
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		delta = -1
+	case tea.MouseButtonWheelDown:
+		delta = 1
+	default:
+		return m
+	}
+	if msg.Action != tea.MouseActionPress || !m.ready || msg.X < 0 || msg.X >= m.width || msg.Y < 0 || msg.Y >= m.height {
+		return m
+	}
+	if m.showHelp {
+		m.scrollHelp(delta * 3)
+		return m
+	}
+	if m.selectingStatus {
+		m.statusCursor = minInt(maxInt(m.statusCursor+delta, 0), len(Statuses)-1)
+		return m
+	}
+	if msg.Y < m.headerHeight() || msg.Y >= m.headerHeight()+m.bodyHeight() {
+		return m
+	}
+	if m.reading || (m.splitPanes() && msg.X >= m.listWidth()) || (!m.splitPanes() && m.focus == focusDetail) {
+		if delta < 0 {
+			m.detail.LineUp(3)
+		} else {
+			m.detail.LineDown(3)
+		}
+	} else {
+		m.move(delta * 3)
+	}
+	return m
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

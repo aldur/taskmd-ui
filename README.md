@@ -30,6 +30,8 @@ Below 120 columns, the list and details each use the full width. Press `tab`
 to switch views, and `esc` to return to the list. Details and help
 wrap to the available width; smaller screens keep active filters, task counts,
 the sort order and navigation hints ahead of optional columns and shortcuts.
+Use the mouse wheel to scroll the pane under the pointer. The wheel also works
+in the full-screen reader, help, and status selector.
 
 Press `enter` to read the selected task full screen at any terminal width.
 This view hides the browser header, filters and borders. It is read-only:

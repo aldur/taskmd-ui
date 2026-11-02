@@ -41,7 +41,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	program := tea.NewProgram(newModel(proj), tea.WithAltScreen())
+	program := tea.NewProgram(newModel(proj), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := program.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "taskmd-ui: %v\n", err)
 		os.Exit(1)
